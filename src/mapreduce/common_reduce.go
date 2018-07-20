@@ -38,7 +38,7 @@ func doReduce(
 	// documentation useful.
 	//
 
-	kvs := make([]KeyValue, 1)
+	kvs := make([]KeyValue, 0)
 	for i := 0; i < nMap; i++ {
 		redName := reduceName(jobName, i, reduceTask)
 		file, err := os.Open(redName)
@@ -76,7 +76,7 @@ func doReduce(
 				enc.Encode(KeyValue{prevKey, redValue})
 			}
 			prevKey = kv.Key
-			prevValues = make([]string, 1)
+			prevValues = make([]string, 0)
 		}
 		prevValues = append(prevValues, kv.Value)
 	}
