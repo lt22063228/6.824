@@ -1,6 +1,8 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -30,5 +32,62 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	// Your code here (Part III, Part IV).
 	//
+
+	// merge pipeline, availChan用来存储可用的worker，每个rpc调用结束之后，worker被重新推进availChan
+	// 如下的逻辑是做了 registerChan 中worker（1. schedule之前已经存在的  2.schedule之后加入的）的merge
+	availChan := make(chan string)
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+				case availChan <- <-registerChan:
+				;
+
+				case <-done:
+					break
+			}
+		}
+	}()
+	defer func(){
+		done <- true
+	}()
+
+
+	switch phase {
+	case mapPhase:
+		doneTaskChan := make(chan int)
+		for taskIndex, mapFile := range mapFiles {
+			worker := <- availChan
+			mapFile := mapFile
+			taskIndex := taskIndex
+			doTaskArgs := DoTaskArgs{JobName:jobName, File:mapFile, Phase:phase, TaskNumber: taskIndex, NumOtherPhase:nReduce}
+			go func() {
+				// todo
+				call(worker, "Worker.DoTask", doTaskArgs, nil)
+				doneTaskChan <- taskIndex
+				availChan <- worker
+			}()
+		}
+		for _, _ = range mapFiles {
+			<- doneTaskChan
+		}
+	case reducePhase:
+		doneTaskChan := make(chan int)
+		for i := 0; i < nReduce; i++ {
+			worker := <-availChan
+			i := i
+			doTaskArgs := DoTaskArgs{JobName:jobName, File:"", Phase:phase, TaskNumber: i, NumOtherPhase:len(mapFiles)}
+			go func() {
+				// todo
+				call(worker, "Worker.DoTask", doTaskArgs, nil)
+				doneTaskChan <- i
+				availChan <- worker
+			}()
+		}
+		for i := 0; i < nReduce; i++ {
+			<- doneTaskChan
+		}
+
+	}
 	fmt.Printf("Schedule: %v done\n", phase)
 }

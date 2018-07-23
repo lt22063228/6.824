@@ -151,6 +151,18 @@ func TestSequentialSingle(t *testing.T) {
 	cleanup(mr)
 }
 
+func TestLocal(t *testing.T) {
+	names := [...]string{"name1", "name2", "name3"}
+	for idx, name := range names {
+		idx := idx
+		go func() {
+			time.Sleep(time.Duration(3) * time.Second)
+			fmt.Println("" + string(idx) + " " + name)
+		}()
+	}
+	time.Sleep(time.Duration(10) * time.Second)
+}
+
 func TestSequentialMany(t *testing.T) {
 	mr := Sequential("test", makeInputs(5), 3, MapFunc, ReduceFunc)
 	mr.Wait()
