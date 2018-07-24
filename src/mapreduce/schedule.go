@@ -2,6 +2,7 @@ package mapreduce
 
 import (
 	"fmt"
+	"sync"
 )
 
 //
@@ -53,41 +54,44 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	}()
 
 
+	waitGroup := sync.WaitGroup{}
+
+
+	taskArgsList := make(chan DoTaskArgs)
 	switch phase {
 	case mapPhase:
-		doneTaskChan := make(chan int)
+		waitGroup.Add(len(mapFiles))
 		for taskIndex, mapFile := range mapFiles {
-			worker := <- availChan
-			mapFile := mapFile
-			taskIndex := taskIndex
-			doTaskArgs := DoTaskArgs{JobName:jobName, File:mapFile, Phase:phase, TaskNumber: taskIndex, NumOtherPhase:nReduce}
-			go func() {
-				// todo
-				call(worker, "Worker.DoTask", doTaskArgs, nil)
-				doneTaskChan <- taskIndex
-				availChan <- worker
-			}()
-		}
-		for _, _ = range mapFiles {
-			<- doneTaskChan
+			taskArgsList <- DoTaskArgs{JobName:jobName, File:mapFile, Phase:phase, TaskNumber: taskIndex, NumOtherPhase:nReduce}
 		}
 	case reducePhase:
-		doneTaskChan := make(chan int)
+		waitGroup.Add(nReduce)
 		for i := 0; i < nReduce; i++ {
-			worker := <-availChan
-			i := i
-			doTaskArgs := DoTaskArgs{JobName:jobName, File:"", Phase:phase, TaskNumber: i, NumOtherPhase:len(mapFiles)}
-			go func() {
-				// todo
-				call(worker, "Worker.DoTask", doTaskArgs, nil)
-				doneTaskChan <- i
-				availChan <- worker
-			}()
+			taskArgsList <- DoTaskArgs{JobName:jobName, File:"", Phase:phase, TaskNumber: i, NumOtherPhase:len(mapFiles)}
 		}
-		for i := 0; i < nReduce; i++ {
-			<- doneTaskChan
-		}
+	}
 
+	doneChan := make(chan bool)
+	go func() {
+		waitGroup.Wait()
+		doneChan <- true
+	}()
+	select {
+	case <- doneChan:
+		break
+	case doTaskArgs := <- taskArgsList:
+		worker := <- availChan
+		go func() {
+			ok := call(worker, "Worker.DoTask", doTaskArgs, nil)
+			if ok {
+				waitGroup.Done()
+			} else {
+				taskArgsList <- doTaskArgs
+			}
+			// todo: for now, rpc call return false only means the task fail, not timeout, so the worker
+			// todo: can be reused
+			availChan <- worker
+		}()
 	}
 	fmt.Printf("Schedule: %v done\n", phase)
 }
