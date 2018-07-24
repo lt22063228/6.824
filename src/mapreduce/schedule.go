@@ -41,8 +41,8 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	go func() {
 		for {
 			select {
-				case availChan <- <-registerChan:
-				;
+				case worker := <-registerChan:
+					availChan <- worker
 
 				case <-done:
 					break
