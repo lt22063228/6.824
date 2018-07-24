@@ -55,7 +55,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 
 	switch phase {
 	case mapPhase:
-		doneTaskChan := make(chan int)
+		doneTaskChan := make(chan int, ntasks)
 		for taskIndex, mapFile := range mapFiles {
 			worker := <- availChan
 			mapFile := mapFile
@@ -72,7 +72,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			<- doneTaskChan
 		}
 	case reducePhase:
-		doneTaskChan := make(chan int)
+		doneTaskChan := make(chan int, ntasks)
 		for i := 0; i < nReduce; i++ {
 			worker := <-availChan
 			i := i
