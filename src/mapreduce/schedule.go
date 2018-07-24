@@ -39,23 +39,18 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	availChan := make(chan string)
 	done := make(chan bool)
 	go func() {
+	LOOP:
 		for {
-			end := false
 			select {
 				case worker := <-registerChan:
 					availChan <- worker
 
-				case end = <-done:
-					break
-			}
-			if end {
-				break
+				case <-done:
+					break LOOP
 			}
 		}
 	}()
-	defer func(){
-		done <- true
-	}()
+	defer close(done)
 
 
 	waitGroup := sync.WaitGroup{}
@@ -75,27 +70,30 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		}
 	}
 
-	doneChan := make(chan bool)
+	doneChan := make(chan struct{})
 	go func() {
 		waitGroup.Wait()
-		doneChan <- true
+		close(doneChan)
 	}()
-	select {
-	case <- doneChan:
-		break
-	case doTaskArgs := <- taskArgsList:
-		worker := <- availChan
-		go func() {
-			ok := call(worker, "Worker.DoTask", doTaskArgs, nil)
-			if ok {
-				waitGroup.Done()
-			} else {
-				taskArgsList <- doTaskArgs
-			}
-			// todo: for now, rpc call return false only means the task fail, not timeout, so the worker
-			// todo: can be reused
-			availChan <- worker
-		}()
+	LOOP:
+	for {
+		select {
+		case <-doneChan:
+			break LOOP
+		case doTaskArgs := <-taskArgsList:
+			worker := <-availChan
+			go func(worker string, doTaskArgs DoTaskArgs) {
+				ok := call(worker, "Worker.DoTask", doTaskArgs, nil)
+				if ok {
+					waitGroup.Done()
+				} else {
+					taskArgsList <- doTaskArgs
+				}
+				// todo: for now, rpc call return false only means the task fail, not timeout, so the worker
+				// todo: can be reused
+				availChan <- worker
+			}(worker, doTaskArgs)
+		}
 	}
 	fmt.Printf("Schedule: %v done\n", phase)
 }
